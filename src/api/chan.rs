@@ -1,13 +1,13 @@
-//! ChanNet HTTP client and /chan/request proxy handler.
+//! `ChanNet` HTTP client and /chan/request proxy handler.
 //!
-//! ChanNet already calls RustWave on:
+//! `ChanNet` already calls `RustWave` on:
 //!   POST /broadcast/transmit  — pushes a ZIP snapshot for AFSK encoding & over-air transmission
 //!   GET  /broadcast/incoming  — pulls decoded ZIP snapshots that arrived over radio
 //!
 //! This module adds the outbound direction:
-//!   POST /chan/request  — operator sends a typed ChanCommand; RustWave forwards it to
-//!                        ChanNet's /chan/command, receives the ZIP response, AFSK-encodes
-//!                        it into WAV, and calls forward_to_broadcaster() for transmission.
+//!   POST /chan/request  — operator sends a typed `ChanCommand`; `RustWave` forwards it to
+//!                        `ChanNet`'s /chan/command, receives the ZIP response, AFSK-encodes
+//!                        it into WAV, and calls `forward_to_broadcaster()` for transmission.
 
 use axum::{extract::State, Json};
 use tracing::info;
@@ -22,23 +22,20 @@ use crate::{encoder, framer, wav};
 
 // ── Reachability probe ─────────────────────────────────────────────────────
 
-/// Hits ChanNet's GET /chan/status. Used by broadcast_status to report
-/// whether the paired ChanNet node is reachable.
+/// Hits `ChanNet`'s GET /chan/status. Used by `broadcast_status` to report
+/// whether the paired `ChanNet` node is reachable.
 pub async fn check_channet_reachable(channet_url: &str) -> bool {
-    match reqwest::Client::new()
+    reqwest::Client::new()
         .get(format!("{channet_url}/chan/status"))
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await
-    {
-        Ok(r) => r.status().is_success(),
-        Err(_) => false,
-    }
+        .is_ok_and(|r| r.status().is_success())
 }
 
 // ── ChanNet command client ─────────────────────────────────────────────────
 
-/// POST a typed ChanCommand to ChanNet's /chan/command endpoint.
+/// POST a typed `ChanCommand` to `ChanNet`'s /chan/command endpoint.
 /// Returns the raw ZIP bytes from the response body.
 pub async fn send_chan_command(
     channet_url: &str,
@@ -49,14 +46,15 @@ pub async fn send_chan_command(
         .json(command)
         .send()
         .await
-        .map_err(|e| ApiError::BroadcasterUnavailable(
-            format!("ChanNet unreachable at {channet_url}: {e}")
-        ))?;
+        .map_err(|e| {
+            ApiError::BroadcasterUnavailable(format!("ChanNet unreachable at {channet_url}: {e}"))
+        })?;
 
     if !resp.status().is_success() {
-        return Err(ApiError::BroadcasterUnavailable(
-            format!("ChanNet /chan/command returned HTTP {}", resp.status()),
-        ));
+        return Err(ApiError::BroadcasterUnavailable(format!(
+            "ChanNet /chan/command returned HTTP {}",
+            resp.status()
+        )));
     }
 
     resp.bytes()

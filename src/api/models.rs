@@ -1,4 +1,4 @@
-//! JSON request and response types for the RustWave API.
+//! JSON request and response types for the `RustWave` API.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -61,14 +61,14 @@ pub enum ChanCommand {
     /// All archived threads + posts for a single board. Always a full export.
     ArchiveExport { board: String },
     /// Entire database — all boards, threads, archives, posts. Use for initial
-    /// sync or recovery only; RustChan logs a warning when this is received.
+    /// sync or recovery only; `RustChan` logs a warning when this is received.
     ForceRefresh,
     /// Post a new reply to an existing thread (the only write command).
     ReplyPush {
-        board:     String,
+        board: String,
         thread_id: u64,
-        author:    String,
-        content:   String,
+        author: String,
+        content: String,
         timestamp: u64,
     },
 }
@@ -76,8 +76,8 @@ pub enum ChanCommand {
 /// Returned by POST /chan/request on success.
 #[derive(Serialize)]
 pub struct ChanRequestResponse {
-    pub status:    &'static str, // "transmitted"
-    pub tx_id:     uuid::Uuid,
+    pub status: &'static str, // "transmitted"
+    pub tx_id: uuid::Uuid,
     pub zip_bytes: usize,
 }
 

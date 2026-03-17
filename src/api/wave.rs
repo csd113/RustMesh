@@ -55,7 +55,10 @@ pub async fn wave_encode(mut multipart: Multipart) -> Result<Response, ApiError>
     Ok((
         [
             (header::CONTENT_TYPE, "audio/wav"),
-            (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{out_name}\"")),
+            (
+                header::CONTENT_DISPOSITION,
+                &format!("attachment; filename=\"{out_name}\""),
+            ),
         ],
         wav_bytes,
     )
@@ -87,7 +90,10 @@ pub async fn wave_decode(mut multipart: Multipart) -> Result<Response, ApiError>
     Ok((
         [
             (header::CONTENT_TYPE, "application/octet-stream"),
-            (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}\"", result.filename)),
+            (
+                header::CONTENT_DISPOSITION,
+                &format!("attachment; filename=\"{}\"", result.filename),
+            ),
         ],
         result.data,
     )
@@ -96,27 +102,27 @@ pub async fn wave_decode(mut multipart: Multipart) -> Result<Response, ApiError>
 
 // ── Shared helper ──────────────────────────────────────────────────────────
 
-async fn extract_file_field(
-    multipart: &mut Multipart,
-) -> Result<(String, Vec<u8>), ApiError> {
-    while let Some(field) = multipart
+async fn extract_file_field(multipart: &mut Multipart) -> Result<(String, Vec<u8>), ApiError> {
+    let Some(field) = multipart
         .next_field()
         .await
         .map_err(|e| ApiError::BadRequest(format!("multipart error: {e}")))?
-    {
-        let filename = field.file_name().unwrap_or("upload").to_string();
-        let data = field
-            .bytes()
-            .await
-            .map_err(|e| ApiError::BadRequest(format!("could not read field bytes: {e}")))?;
+    else {
+        return Err(ApiError::BadRequest(
+            "no file field found in multipart body".into(),
+        ));
+    };
 
-        if data.is_empty() {
-            warn!(filename = %filename, "received empty file field");
-            return Err(ApiError::BadRequest("file field is empty".into()));
-        }
+    let filename = field.file_name().unwrap_or("upload").to_string();
+    let data = field
+        .bytes()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("could not read field bytes: {e}")))?;
 
-        return Ok((filename, data.to_vec()));
+    if data.is_empty() {
+        warn!(filename = %filename, "received empty file field");
+        return Err(ApiError::BadRequest("file field is empty".into()));
     }
 
-    Err(ApiError::BadRequest("no file field found in multipart body".into()))
+    Ok((filename, data.to_vec()))
 }

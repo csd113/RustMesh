@@ -1,4 +1,4 @@
-//! Logging initialisation for RustWave.
+//! Logging initialisation for `RustWave`.
 //!
 //! Call `logging::init()` once at the start of `main()`.
 //!
@@ -7,13 +7,11 @@
 //!   - rustwave.log (file): DEBUG and above, JSON format, rolling daily
 //!
 //! The log file is written next to the binary.
-//! Set RUSTWAVE_LOG=debug to see debug output on stderr too.
+//! Set `RUSTWAVE_LOG`=debug to see debug output on stderr too.
 
 use std::path::PathBuf;
 use tracing_appender::rolling;
-use tracing_subscriber::{
-    fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
-};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
 /// Initialise logging. Must be called once before any tracing macros are used.
 ///
@@ -31,12 +29,10 @@ pub fn init() -> tracing_appender::non_blocking::WorkerGuard {
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     // stderr layer — human readable, INFO+ by default, respects RUSTWAVE_LOG
-    let stderr_filter = EnvFilter::try_from_env("RUSTWAVE_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let stderr_filter =
+        EnvFilter::try_from_env("RUSTWAVE_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
 
-    let stderr_layer = fmt::layer()
-        .with_target(false)
-        .with_filter(stderr_filter);
+    let stderr_layer = fmt::layer().with_target(false).with_filter(stderr_filter);
 
     // file layer — JSON, DEBUG+
     let file_layer = fmt::layer()

@@ -456,12 +456,18 @@ pub fn run() -> eframe::Result<()> {
         let addr: std::net::SocketAddr = std::env::var("RUSTWAVE_BIND")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or_else(|| "127.0.0.1:7071".parse().unwrap());
+            .unwrap_or_else(|| std::net::SocketAddr::from(([127, 0, 0, 1], 7071)));
 
-        let rt = tokio::runtime::Builder::new_current_thread()
+        let rt = match tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .expect("failed to build Tokio runtime for GUI API server");
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                tracing::error!("failed to build Tokio runtime for GUI API server: {e}");
+                return;
+            }
+        };
 
         rt.block_on(async move {
             let state = crate::api::state::AppState::new(false);

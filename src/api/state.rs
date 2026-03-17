@@ -1,7 +1,7 @@
-//! Shared state for the RustWave API server.
+//! Shared state for the `RustWave` API server.
 
-use std::{collections::VecDeque, sync::Arc};
 use bytes::Bytes;
+use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -17,6 +17,7 @@ pub type IncomingQueue = Arc<Mutex<VecDeque<QueuedFile>>>;
 pub struct AppState {
     pub broadcaster_url: String,
     pub channet_url: String,
+    #[allow(dead_code)]
     pub wave_routes_enabled: bool,
     pub incoming_queue: IncomingQueue,
 }

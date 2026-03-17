@@ -93,7 +93,10 @@ pub fn read_from_bytes(data: &[u8]) -> Result<Vec<f64>, String> {
             reader
                 .samples::<i16>()
                 .step_by(channels)
-                .map(|s| s.map(|v| f64::from(v) / 32_768.0).map_err(|e| e.to_string()))
+                .map(|s| {
+                    s.map(|v| f64::from(v) / 32_768.0)
+                        .map_err(|e| e.to_string())
+                })
                 .collect()
         }
         (bits, fmt) => Err(format!(

@@ -46,15 +46,12 @@ pub async fn broadcast_status(State(state): State<AppState>) -> Json<BroadcastSt
 }
 
 async fn check_broadcaster_reachable(url: &str) -> bool {
-    match reqwest::Client::new()
+    reqwest::Client::new()
         .get(url)
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await
-    {
-        Ok(r) => r.status().is_success(),
-        Err(_) => false,
-    }
+        .is_ok_and(|r| r.status().is_success())
 }
 
 // ── POST /broadcast/transmit ───────────────────────────────────────────────
@@ -87,7 +84,11 @@ pub async fn broadcast_transmit(
 
     forward_to_broadcaster(&state.broadcaster_url, &filename, wav_bytes, tx_id).await?;
 
-    Ok(Json(TransmitResponse { status: "ok", tx_id, wav_bytes: wav_size }))
+    Ok(Json(TransmitResponse {
+        status: "ok",
+        tx_id,
+        wav_bytes: wav_size,
+    }))
 }
 
 pub async fn forward_to_broadcaster(
@@ -114,13 +115,16 @@ pub async fn forward_to_broadcaster(
         .multipart(form)
         .send()
         .await
-        .map_err(|e| ApiError::BroadcasterUnavailable(
-            format!("could not reach Broadcaster at {broadcaster_url}: {e}")
-        ))?;
+        .map_err(|e| {
+            ApiError::BroadcasterUnavailable(format!(
+                "could not reach Broadcaster at {broadcaster_url}: {e}"
+            ))
+        })?;
 
     if !resp.status().is_success() {
         return Err(ApiError::BroadcasterUnavailable(format!(
-            "Broadcaster returned HTTP {} for tx_id {tx_id}", resp.status()
+            "Broadcaster returned HTTP {} for tx_id {tx_id}",
+            resp.status()
         )));
     }
 
@@ -136,7 +140,10 @@ pub async fn broadcast_receive(
 ) -> Result<Json<ReceiveResponse>, ApiError> {
     let (_filename, wav_bytes) = extract_file_field(&mut multipart).await?;
 
-    info!(wav_bytes = wav_bytes.len(), "POST /broadcast/receive decoding WAV");
+    info!(
+        wav_bytes = wav_bytes.len(),
+        "POST /broadcast/receive decoding WAV"
+    );
 
     let decoded = tokio::task::spawn_blocking(move || {
         let samples = wav::read_from_bytes(&wav_bytes)?;
@@ -156,58 +163,67 @@ pub async fn broadcast_receive(
         "POST /broadcast/receive queuing decoded file"
     );
 
-    state.enqueue(QueuedFile { queued_id, bytes: Bytes::from(decoded.data) }).await;
+    state
+        .enqueue(QueuedFile {
+            queued_id,
+            bytes: Bytes::from(decoded.data),
+        })
+        .await;
 
-    Ok(Json(ReceiveResponse { status: "ok", queued_id, decoded_bytes: decoded_size }))
+    Ok(Json(ReceiveResponse {
+        status: "ok",
+        queued_id,
+        decoded_bytes: decoded_size,
+    }))
 }
 
 // ── GET /broadcast/incoming ────────────────────────────────────────────────
 
 pub async fn broadcast_incoming(State(state): State<AppState>) -> Response {
-    match state.dequeue().await {
-        Some(file) => {
-            info!(queued_id = %file.queued_id, bytes = file.bytes.len(),
-                "GET /broadcast/incoming dequeuing file");
-            (
-                StatusCode::OK,
-                [
-                    (header::CONTENT_TYPE, "application/octet-stream"),
-                    (header::CONTENT_DISPOSITION, "attachment; filename=\"snapshot.zip\""),
-                ],
-                file.bytes,
-            )
-                .into_response()
-        }
-        None => {
-            debug!("GET /broadcast/incoming queue is empty");
-            (StatusCode::OK, Json(QueueEmptyResponse { status: "empty" })).into_response()
-        }
+    if let Some(file) = state.dequeue().await {
+        info!(queued_id = %file.queued_id, bytes = file.bytes.len(),
+            "GET /broadcast/incoming dequeuing file");
+        (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, "application/octet-stream"),
+                (
+                    header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"snapshot.zip\"",
+                ),
+            ],
+            file.bytes,
+        )
+            .into_response()
+    } else {
+        debug!("GET /broadcast/incoming queue is empty");
+        (StatusCode::OK, Json(QueueEmptyResponse { status: "empty" })).into_response()
     }
 }
 
 // ── Shared helper ──────────────────────────────────────────────────────────
 
-async fn extract_file_field(
-    multipart: &mut Multipart,
-) -> Result<(String, Vec<u8>), ApiError> {
-    while let Some(field) = multipart
+async fn extract_file_field(multipart: &mut Multipart) -> Result<(String, Vec<u8>), ApiError> {
+    let Some(field) = multipart
         .next_field()
         .await
         .map_err(|e| ApiError::BadRequest(format!("multipart error: {e}")))?
-    {
-        let filename = field.file_name().unwrap_or("upload").to_string();
-        let data = field
-            .bytes()
-            .await
-            .map_err(|e| ApiError::BadRequest(format!("could not read field bytes: {e}")))?;
+    else {
+        return Err(ApiError::BadRequest(
+            "no file field found in multipart body".into(),
+        ));
+    };
 
-        if data.is_empty() {
-            warn!(filename = %filename, "received empty file field");
-            return Err(ApiError::BadRequest("file field is empty".into()));
-        }
+    let filename = field.file_name().unwrap_or("upload").to_string();
+    let data = field
+        .bytes()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("could not read field bytes: {e}")))?;
 
-        return Ok((filename, data.to_vec()));
+    if data.is_empty() {
+        warn!(filename = %filename, "received empty file field");
+        return Err(ApiError::BadRequest("file field is empty".into()));
     }
 
-    Err(ApiError::BadRequest("no file field found in multipart body".into()))
+    Ok((filename, data.to_vec()))
 }

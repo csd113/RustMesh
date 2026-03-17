@@ -1,7 +1,7 @@
-//! RustWave HTTP API server.
+//! `RustWave` HTTP API server.
 //!
-//! full_router() — /wave/* + /broadcast/* + /chan/* (serve subcommand)
-//! gui_router()  — /broadcast/* + /chan/*            (gui subcommand)
+//! `full_router()` — /wave/* + /broadcast/* + /chan/* (serve subcommand)
+//! `gui_router()`  — /broadcast/* + /chan/*            (gui subcommand)
 
 pub mod broadcast;
 pub mod chan;
@@ -43,15 +43,14 @@ pub fn gui_router(state: AppState) -> Router {
 
 fn broadcast_routes() -> Router<AppState> {
     Router::new()
-        .route("/broadcast/status",   get(broadcast::broadcast_status))
+        .route("/broadcast/status", get(broadcast::broadcast_status))
         .route("/broadcast/transmit", post(broadcast::broadcast_transmit))
-        .route("/broadcast/receive",  post(broadcast::broadcast_receive))
+        .route("/broadcast/receive", post(broadcast::broadcast_receive))
         .route("/broadcast/incoming", get(broadcast::broadcast_incoming))
 }
 
 fn chan_routes() -> Router<AppState> {
-    Router::new()
-        .route("/chan/request", post(chan::chan_request))
+    Router::new().route("/chan/request", post(chan::chan_request))
 }
 
 pub async fn run_server(router: Router, bind_addr: SocketAddr) -> anyhow::Result<()> {
@@ -63,4 +62,3 @@ pub async fn run_server(router: Router, bind_addr: SocketAddr) -> anyhow::Result
 
 #[cfg(test)]
 pub mod tests;
-
