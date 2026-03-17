@@ -451,6 +451,29 @@ fn dashed_border(painter: &egui::Painter, rect: Rect, stroke: Stroke) {
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 pub fn run() -> eframe::Result<()> {
+    // Spawn the /broadcast/* API server on a background OS thread.
+    std::thread::spawn(|| {
+        let addr: std::net::SocketAddr = std::env::var("RUSTWAVE_BIND")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| "127.0.0.1:7071".parse().unwrap());
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("failed to build Tokio runtime for GUI API server");
+
+        rt.block_on(async move {
+            let state = crate::api::state::AppState::new(false);
+            let router = crate::api::gui_router(state);
+            if let Err(e) = crate::api::run_server(router, addr).await {
+                tracing::error!("GUI API server error: {e}");
+            }
+        });
+    });
+
+    tracing::info!("GUI mode: /broadcast/* API started on 127.0.0.1:7071");
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([480.0, 340.0])
