@@ -10,6 +10,36 @@ name = "rustwave-cli"
 path = "src/main.rs"
 
 [dependencies]
+# — existing —
 clap    = { version = "4", features = ["derive"] }
 hound   = "3"
 eframe  = "0.31"
+
+# — NEW: async runtime (required for axum) —
+tokio   = { version = "1", features = ["full"] }
+
+# — NEW: HTTP server —
+axum    = { version = "0.7", features = ["multipart"] }
+tower   = "0.4"
+tower-http = { version = "0.5", features = ["cors", "limit"] }
+
+# — NEW: HTTP client (forward WAV to Broadcaster) —
+reqwest = { version = "0.12", features = ["multipart", "json"] }
+
+# — NEW: serialisation —
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+
+# — NEW: UUID generation for tx_id / queued_id —
+uuid    = { version = "1", features = ["v4", "serde"] }
+
+# — NEW: logging / tracing —
+tracing             = "0.1"
+tracing-subscriber  = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender    = "0.2"
+
+# — NEW: in-memory byte buffers (WAV bytes without temp files) —
+bytes   = "1"
+
+# — NEW: error propagation in run_server —
+anyhow  = "1"

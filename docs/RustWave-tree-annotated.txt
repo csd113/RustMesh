@@ -1,0 +1,54 @@
+├── Cargo.lock
+├── Cargo.toml
+├── changelog.txt
+├── deny.toml
+├── dev-check-strict.sh
+├── docs
+│   ├── hamnet-relay-build-roadmap.md
+│   └── rustwave_impl_plan.md
+├── LICENSE
+├── README.md
+├── rustwave_api_implementation_plan.md
+├── src
+│   ├── api
+│   │   ├── mod.rs        # Router builder: full_router (wave + broadcast + chan routes),
+│   │   │                 #   gui_router (broadcast + chan routes), run_server; 10 MB body limit
+│   │   ├── models.rs     # All JSON request/response structs; ChanCommand tagged enum
+│   │   │                 #   (full_export, board_export, thread_export, archive_export,
+│   │   │                 #    force_refresh, reply_push) matching ChanNet /chan/command API
+│   │   ├── errors.rs     # ApiError enum with IntoResponse impl
+│   │   ├── state.rs      # AppState (broadcaster_url, channet_url, wave_routes_enabled,
+│   │   │                 #   incoming_queue); IncomingQueue; QueuedFile
+│   │   ├── wave.rs       # Handlers: GET /wave/status, POST /wave/encode, POST /wave/decode
+│   │   │                 #   (serve mode only)
+│   │   ├── broadcast.rs  # Handlers: GET /broadcast/status, POST /broadcast/transmit,
+│   │   │                 #   POST /broadcast/receive, GET /broadcast/incoming;
+│   │   │                 #   pub forward_to_broadcaster() reused by chan.rs;
+│   │   │                 #   ChanNet calls /broadcast/transmit to push ZIP snapshots and
+│   │   │                 #   GET /broadcast/incoming to pull decoded inbound payloads
+│   │   ├── chan.rs       # ChanNet client + /chan/request proxy handler:
+│   │   │                 #   check_channet_reachable() → GET /chan/status probe;
+│   │   │                 #   send_chan_command() → POST /chan/command, returns raw ZIP bytes;
+│   │   │                 #   POST /chan/request handler: receives ChanCommand JSON →
+│   │   │                 #   forwards to ChanNet /chan/command → AFSK-encodes ZIP into WAV
+│   │   │                 #   → calls forward_to_broadcaster() for over-the-air transmission
+│   │   └── tests.rs      # Unit test: queue enqueue/dequeue round-trip
+│   ├── config.rs         # Shared constants: sample rate (44 100 Hz), baud rate (1 200),
+│   │                     #   MARK/SPACE frequencies, amplitude, preamble length & sync word
+│   ├── decoder.rs        # PCM → bytes: Goertzel-filter bit detection, clock-phase search,
+│   │                     #   sync-word alignment, and frame extraction (with progress callback)
+│   ├── encoder.rs        # bytes → PCM: AFSK sine-wave synthesis at MARK/SPACE freqs,
+│   │                     #   50 ms silence padding, optional progress callback
+│   ├── framer.rs         # Wire-frame builder/parser: preamble + sync word + u16 filename
+│   │                     #   length + filename + u32 payload length + payload + CRC-16/CCITT
+│   ├── gui.rs            # egui drag-and-drop front-end: auto-detects WAV vs. other file,
+│   │                     #   runs encode/decode on a background thread, shows progress bar;
+│   │                     #   spawns broadcast + chan API server thread before launching eframe
+│   ├── logging.rs        # Logging init: stderr INFO+ (human-readable) + rolling JSON file
+│   │                     #   DEBUG+; respects RUSTWAVE_LOG env var
+│   ├── main.rs           # CLI entry point (clap): `gui`, `serve`, `encode -i … -o …`,
+│   │                     #   `decode -i … [-o …]`
+│   └── wav.rs            # WAV I/O via hound: write normalised f64→i16 PCM; read i16 PCM→f64
+│                         #   (stereo accepted; only left channel used);
+│                         #   write_to_bytes / read_from_bytes for in-memory API use
+└── todo.txt
