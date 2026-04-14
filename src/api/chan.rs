@@ -76,7 +76,7 @@ pub async fn chan_request(
 
     // 2. AFSK-encode the ZIP into WAV bytes (CPU-bound; run on blocking thread).
     let wav_bytes: Vec<u8> = tokio::task::spawn_blocking(move || {
-        let framed = framer::frame(&zip_bytes, "channet_payload.zip");
+        let framed = framer::frame(&zip_bytes, "channet_payload.zip")?;
         let samples = encoder::encode(&framed);
         wav::write_to_bytes(&samples)
     })

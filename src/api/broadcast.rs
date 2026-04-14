@@ -42,6 +42,7 @@ pub async fn broadcast_status(State(state): State<AppState>) -> Json<BroadcastSt
         channet_connected,
         broadcaster_url: state.broadcaster_url.clone(),
         queue_depth,
+        queue_limit: state.max_queue_depth,
     })
 }
 
@@ -67,7 +68,7 @@ pub async fn broadcast_transmit(
     let wav_bytes: Vec<u8> = tokio::task::spawn_blocking({
         let filename = filename.clone();
         move || {
-            let framed = framer::frame(&file_bytes, &filename);
+            let framed = framer::frame(&file_bytes, &filename)?;
             let samples = encoder::encode(&framed);
             wav::write_to_bytes(&samples)
         }
@@ -164,11 +165,17 @@ pub async fn broadcast_receive(
     );
 
     state
-        .enqueue(QueuedFile {
+        .try_enqueue(QueuedFile {
             queued_id,
             bytes: Bytes::from(decoded.data),
         })
-        .await;
+        .await
+        .map_err(|file| {
+            ApiError::QueueFull(format!(
+                "incoming queue full at {} entries; queued_id {} dropped",
+                state.max_queue_depth, file.queued_id
+            ))
+        })?;
 
     Ok(Json(ReceiveResponse {
         status: "ok",

@@ -33,7 +33,7 @@ pub async fn wave_encode(mut multipart: Multipart) -> Result<Response, ApiError>
     info!(filename = %filename, input_bytes = file_bytes.len(), "POST /wave/encode starting");
 
     let result = tokio::task::spawn_blocking(move || {
-        let framed = framer::frame(&file_bytes, &filename);
+        let framed = framer::frame(&file_bytes, &filename)?;
         let samples = encoder::encode(&framed);
         let wav_bytes = wav::write_to_bytes(&samples)?;
         Ok::<(String, Vec<u8>), String>((filename, wav_bytes))

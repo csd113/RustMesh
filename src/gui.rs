@@ -88,9 +88,9 @@ impl AfskGui {
                 } else {
                     std::fs::read(&path)
                         .map_err(|e| e.to_string())
-                        .map(|data| {
-                            let framed = crate::framer::frame(&data, &thread_filename);
-                            crate::encoder::encode_progress(&framed, on_progress)
+                        .and_then(|data| {
+                            crate::framer::frame(&data, &thread_filename)
+                                .map(|framed| crate::encoder::encode_progress(&framed, on_progress))
                         })
                         .and_then(|samples| {
                             let stem = path.file_stem().unwrap_or_default().to_string_lossy();

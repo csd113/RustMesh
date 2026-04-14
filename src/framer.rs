@@ -5,6 +5,7 @@
 /// └──────────────┴────────┴──────────────┴──────┴──────────────┴─────────┴────────┘
 ///                 ◄──────────────────── CRC covers this span ──────────────────────►
 use crate::config::{PREAMBLE_LEN, SYNC};
+use std::path::Path;
 
 /// Decoded frame: original filename and payload bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,28 +14,35 @@ pub struct Decoded {
     pub data: Vec<u8>,
 }
 
-/// Wrap `data` in a transmittable frame, embedding `filename` so the decoder
-/// can reconstruct the file with the correct name and extension.
+/// Wrap `data` in a transmittable frame, embedding the basename of `filename`
+/// so the decoder can reconstruct the file with the correct name and extension.
 ///
 /// # Panics
 ///
 /// Panics if `data.len()` exceeds `u32::MAX` (≈ 4 GiB).
 #[allow(
     clippy::arithmetic_side_effects,  // capacity arithmetic is safe; values are small by construction
-    clippy::cast_possible_truncation, // name_len ≤ 255, data.len ≤ u32::MAX — guarded above each cast
+    clippy::cast_possible_truncation, // name_len ≤ u16::MAX, data.len ≤ u32::MAX — guarded above each cast
     clippy::indexing_slicing,         // out[PREAMBLE_LEN..] is valid: preamble bytes are always pushed first
 )]
-pub fn frame(data: &[u8], filename: &str) -> Vec<u8> {
+pub fn frame(data: &[u8], filename: &str) -> Result<Vec<u8>, String> {
+    let filename = Path::new(filename)
+        .file_name()
+        .ok_or_else(|| "filename must contain a final path component".to_string())?;
+    let filename = filename
+        .to_str()
+        .ok_or_else(|| "filename must be valid UTF-8".to_string())?;
+
     let name_bytes = filename.as_bytes();
-    let name_len = name_bytes.len().min(255); // cap at 255 bytes
-    let name_bytes = &name_bytes[..name_len];
+    let name_len = u16::try_from(name_bytes.len())
+        .map_err(|_| "filename exceeds maximum frame size (u16::MAX bytes)".to_string())?;
 
     assert!(
         u32::try_from(data.len()).is_ok(),
         "payload exceeds maximum frame size (u32::MAX bytes)"
     );
 
-    let capacity = PREAMBLE_LEN + 2 + 2 + name_len + 4 + data.len() + 2;
+    let capacity = PREAMBLE_LEN + 2 + 2 + name_bytes.len() + 4 + data.len() + 2;
     let mut out = Vec::with_capacity(capacity);
 
     // Preamble
@@ -43,8 +51,8 @@ pub fn frame(data: &[u8], filename: &str) -> Vec<u8> {
     // Sync word
     out.extend_from_slice(&SYNC);
 
-    // Filename length (u16 LE) + filename bytes — name_len ≤ 255 so cast is lossless
-    out.extend_from_slice(&(name_len as u16).to_le_bytes());
+    // Filename length (u16 LE) + filename bytes — name_len is validated above
+    out.extend_from_slice(&name_len.to_le_bytes());
     out.extend_from_slice(name_bytes);
 
     // Payload length (u32 LE) + payload — assert above guarantees cast is lossless
@@ -55,7 +63,7 @@ pub fn frame(data: &[u8], filename: &str) -> Vec<u8> {
     let crc = crc16(&out[PREAMBLE_LEN..]);
     out.extend_from_slice(&crc.to_le_bytes());
 
-    out
+    Ok(out)
 }
 
 /// Find and validate a frame inside `raw`, returning the embedded filename and payload.
@@ -91,7 +99,8 @@ pub fn deframe(raw: &[u8]) -> Result<Decoded, String> {
     if raw.len() < cursor + name_len {
         return Err("frame too short: missing filename".into());
     }
-    let filename = String::from_utf8_lossy(&raw[cursor..cursor + name_len]).into_owned();
+    let filename = String::from_utf8(raw[cursor..cursor + name_len].to_vec())
+        .map_err(|_| "filename is not valid UTF-8".to_string())?;
     cursor += name_len;
 
     // payload_len (u32)
@@ -191,7 +200,7 @@ mod tests {
 
     fn rt(data: &[u8], name: &str) -> Decoded {
         #[allow(clippy::unwrap_used)]
-        deframe(&frame(data, name)).unwrap()
+        deframe(&frame(data, name).unwrap()).unwrap()
     }
 
     #[test]
@@ -222,8 +231,15 @@ mod tests {
     }
 
     #[test]
+    fn long_filename_is_preserved() {
+        let filename = format!("{}.txt", "a".repeat(260));
+        let d = rt(b"data", &filename);
+        assert_eq!(d.filename, filename);
+    }
+
+    #[test]
     fn deframe_ignores_leading_garbage() {
-        let mut framed = frame(b"test", "test.txt");
+        let mut framed = frame(b"test", "test.txt").unwrap();
         framed.insert(0, 0xFF);
         framed.insert(0, 0x42);
         #[allow(clippy::unwrap_used)]
@@ -239,7 +255,7 @@ mod tests {
         clippy::arithmetic_side_effects
     )]
     fn crc_detects_corruption() {
-        let mut framed = frame(b"integrity check", "check.txt");
+        let mut framed = frame(b"integrity check", "check.txt").unwrap();
         // Corrupt a payload byte (past preamble+sync+namelen+name+payloadlen)
         let corrupt_pos = PREAMBLE_LEN + 2 + 2 + "check.txt".len() + 4 + 2;
         framed[corrupt_pos] ^= 0xFF;

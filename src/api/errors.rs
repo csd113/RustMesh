@@ -16,6 +16,7 @@ pub enum ApiError {
     EncodeFailed(String),
     DecodeFailed(String),
     BroadcasterUnavailable(String),
+    QueueFull(String),
     Internal(String),
 }
 
@@ -26,6 +27,7 @@ impl ApiError {
             Self::EncodeFailed(_) => "ENCODE_FAILED",
             Self::DecodeFailed(_) => "DECODE_FAILED",
             Self::BroadcasterUnavailable(_) => "BROADCASTER_UNAVAILABLE",
+            Self::QueueFull(_) => "QUEUE_FULL",
             Self::Internal(_) => "INTERNAL_ERROR",
         }
     }
@@ -35,6 +37,7 @@ impl ApiError {
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::EncodeFailed(_) | Self::DecodeFailed(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::BroadcasterUnavailable(_) => StatusCode::BAD_GATEWAY,
+            Self::QueueFull(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -48,6 +51,7 @@ impl IntoResponse for ApiError {
             | Self::EncodeFailed(m)
             | Self::DecodeFailed(m)
             | Self::BroadcasterUnavailable(m)
+            | Self::QueueFull(m)
             | Self::Internal(m) => m.clone(),
         };
 

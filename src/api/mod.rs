@@ -12,6 +12,7 @@ pub mod wave;
 
 use axum::{routing::get, routing::post, Router};
 use std::net::SocketAddr;
+use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 use tracing::info;
 
@@ -29,6 +30,7 @@ pub fn full_router(state: AppState) -> Router {
         .merge(wave_routes)
         .merge(broadcast_routes())
         .merge(chan_routes())
+        .layer(CorsLayer::permissive())
         .layer(RequestBodyLimitLayer::new(BODY_LIMIT))
         .with_state(state)
 }
@@ -37,6 +39,7 @@ pub fn gui_router(state: AppState) -> Router {
     Router::new()
         .merge(broadcast_routes())
         .merge(chan_routes())
+        .layer(CorsLayer::permissive())
         .layer(RequestBodyLimitLayer::new(BODY_LIMIT))
         .with_state(state)
 }

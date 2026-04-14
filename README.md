@@ -41,10 +41,10 @@ cargo build --release
 
 ```bash
 # Encode a file to WAV
-rustwave encode -i data.bin -o signal.wav
+rustwave-cli encode -i data.bin -o signal.wav
 
 # Decode a WAV back to bytes
-rustwave decode -i signal.wav -o data.bin
+rustwave-cli decode -i signal.wav -o data.bin
 
 # Launch the graphical interface
 rustwave-cli --gui
@@ -53,18 +53,16 @@ rustwave-cli --gui
 ### Library
 
 ```rust
-use rustwave::{encode, decode};
+use rustwave::{decode_file, encode_file};
+use std::path::PathBuf;
 
 fn main() {
-    let payload = b"Hello, RustWave!";
+    let input = PathBuf::from("data.bin");
+    let output = PathBuf::from("signal.wav");
+    encode_file(&input, &output).expect("encode failed");
 
-    // Encode bytes → WAV samples
-    let wav_path = "signal.wav";
-    encode(payload, wav_path).expect("encode failed");
-
-    // Decode WAV → original bytes
-    let recovered = decode(wav_path).expect("decode failed");
-    assert_eq!(payload, recovered.as_slice());
+    let recovered = decode_file(&output, None).expect("decode failed");
+    assert_eq!(recovered.file_name().and_then(|s| s.to_str()), Some("data.bin"));
 }
 ```
 
@@ -75,7 +73,7 @@ fn main() {
 ```
 [ your bytes ]
       │
-   FRAMER      preamble (24 × 0xAA) | sync (0x7E 0x7E) | length (u32 LE) | payload | CRC-16
+   FRAMER      preamble (24 × 0xAA) | sync (0x7E 0x7E) | name_len (u16 LE) | name | payload_len (u32 LE) | payload | CRC-16
       │
   ENCODER      each bit → sine wave at 1200 Hz (mark=1) or 2200 Hz (space=0)
                continuous-phase FSK at 1200 baud, 44100 Hz / 16-bit mono WAV
@@ -100,7 +98,7 @@ fn main() {
 | Space (0)      | 2 200 Hz                                  |
 | Modulation     | CPFSK (continuous-phase FSK)              |
 | WAV format     | 16-bit signed PCM, mono                   |
-| Frame overhead | 28 bytes (preamble + sync + length + CRC) |
+| Frame overhead | 30 bytes + filename length (preamble + sync + name_len + payload_len + CRC) |
 
 ---
 
@@ -108,7 +106,7 @@ fn main() {
 
 ### Framing & CRC
 
-The framer wraps every payload in a Bell-202-compatible envelope. A 24-byte `0xAA` preamble allows the decoder to lock onto the signal, followed by a `0x7E 0x7E` sync word, a 4-byte little-endian length field, the raw payload, and a CRC-16/CCITT checksum. The decoder performs a bit-level sync-word search that handles arbitrary byte offsets in the audio stream.
+The framer wraps every payload in a Bell-202-compatible envelope. A 24-byte `0xAA` preamble allows the decoder to lock onto the signal, followed by a `0x7E 0x7E` sync word, a UTF-8 filename length field, the filename bytes, a 4-byte little-endian payload length field, the raw payload, and a CRC-16/CCITT checksum. The decoder performs a bit-level sync-word search that handles arbitrary byte offsets in the audio stream.
 
 ### GUI Mode
 
@@ -128,7 +126,8 @@ RustWave is designed as the AFSK codec layer for [HAMNET-RELAY](docs/hamnet-rela
 
 ```
 src/
-  main.rs       CLI (clap — encode / decode subcommands, --gui flag)
+  main.rs       CLI (clap — encode / decode subcommands, GUI flag + subcommand)
+  lib.rs        Public library helpers + re-exports
   config.rs     Shared constants (sample rate, baud rate, frequencies)
   framer.rs     Byte envelope: preamble, sync word, length, CRC-16/CCITT
   wav.rs        WAV file I/O via hound

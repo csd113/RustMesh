@@ -119,11 +119,6 @@ fn find_frame_in_bits(bits: &[bool]) -> Result<Decoded, String> {
         };
         cursor += 16;
 
-        if name_len > 255 {
-            search = sync_start + 1;
-            continue;
-        }
-
         // ── name bytes ────────────────────────────────────────────────
         let name_bits = name_len * 8;
         if cursor + name_bits > bits.len() {
@@ -131,7 +126,13 @@ fn find_frame_in_bits(bits: &[bool]) -> Result<Decoded, String> {
             continue;
         }
         let name_bytes = bits_to_bytes(&bits[cursor..cursor + name_bits]);
-        let filename = String::from_utf8_lossy(&name_bytes).into_owned();
+        let filename = match String::from_utf8(name_bytes) {
+            Ok(name) => name,
+            Err(_) => {
+                search = sync_start + 1;
+                continue;
+            }
+        };
         cursor += name_bits;
 
         // ── payload_len (u32 LE) ──────────────────────────────────────
@@ -144,15 +145,29 @@ fn find_frame_in_bits(bits: &[bool]) -> Result<Decoded, String> {
         };
         cursor += 32;
 
-        if payload_len > 1_000_000 {
-            search = sync_start + 1;
-            continue;
-        }
-
         // ── payload ───────────────────────────────────────────────────
         let payload_start = cursor;
-        let payload_end = payload_start + payload_len * 8;
-        let crc_end = payload_end + 16;
+        let payload_bits = match payload_len.checked_mul(8) {
+            Some(bits) => bits,
+            None => {
+                search = sync_start + 1;
+                continue;
+            }
+        };
+        let payload_end = match payload_start.checked_add(payload_bits) {
+            Some(end) => end,
+            None => {
+                search = sync_start + 1;
+                continue;
+            }
+        };
+        let crc_end = match payload_end.checked_add(16) {
+            Some(end) => end,
+            None => {
+                search = sync_start + 1;
+                continue;
+            }
+        };
         if crc_end > bits.len() {
             search = sync_start + 1;
             continue;
@@ -254,7 +269,7 @@ mod tests {
     #[test]
     fn full_round_trip_text() -> Result<(), String> {
         let payload = b"Hello, AFSK!";
-        let samples = encoder::encode(&framer::frame(payload, "hello.txt"));
+        let samples = encoder::encode(&framer::frame(payload, "hello.txt").unwrap());
         let decoded = decode(&samples)?;
         assert_eq!(decoded.data, payload);
         assert_eq!(decoded.filename, "hello.txt");
@@ -264,7 +279,7 @@ mod tests {
     #[test]
     fn full_round_trip_all_bytes() -> Result<(), String> {
         let payload: Vec<u8> = (0u8..=255).collect();
-        let samples = encoder::encode(&framer::frame(&payload, "all.bin"));
+        let samples = encoder::encode(&framer::frame(&payload, "all.bin").unwrap());
         let decoded = decode(&samples)?;
         assert_eq!(decoded.data, payload);
         assert_eq!(decoded.filename, "all.bin");
@@ -273,7 +288,7 @@ mod tests {
 
     #[test]
     fn full_round_trip_empty() -> Result<(), String> {
-        let samples = encoder::encode(&framer::frame(&[], "empty.bin"));
+        let samples = encoder::encode(&framer::frame(&[], "empty.bin").unwrap());
         let decoded = decode(&samples)?;
         assert!(decoded.data.is_empty());
         Ok(())
@@ -282,7 +297,7 @@ mod tests {
     #[test]
     fn filename_with_dots_preserved() -> Result<(), String> {
         let payload = b"compressed archive";
-        let samples = encoder::encode(&framer::frame(payload, "archive.tar.gz"));
+        let samples = encoder::encode(&framer::frame(payload, "archive.tar.gz").unwrap());
         let decoded = decode(&samples)?;
         assert_eq!(decoded.filename, "archive.tar.gz");
         Ok(())

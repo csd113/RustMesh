@@ -21,6 +21,7 @@ pub struct BroadcastStatusResponse {
     pub channet_connected: bool,
     pub broadcaster_url: String,
     pub queue_depth: usize,
+    pub queue_limit: usize,
 }
 
 #[derive(Serialize)]

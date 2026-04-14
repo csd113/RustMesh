@@ -48,3 +48,19 @@ async fn queue_preserves_fifo_order() {
     }
     assert_eq!(state.queue_depth().await, 0);
 }
+
+#[tokio::test]
+async fn queue_respects_limit() {
+    let mut state = AppState::new(false);
+    state.max_queue_depth = 1;
+    let file = |byte| QueuedFile {
+        queued_id: Uuid::new_v4(),
+        bytes: Bytes::from(vec![byte]),
+    };
+
+    state
+        .try_enqueue(file(1))
+        .await
+        .expect("first enqueue should succeed");
+    assert!(state.try_enqueue(file(2)).await.is_err());
+}
