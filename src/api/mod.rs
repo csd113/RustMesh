@@ -56,6 +56,12 @@ fn chan_routes() -> Router<AppState> {
     Router::new().route("/chan/request", post(chan::chan_request))
 }
 
+/// Bind and run the HTTP API server.
+///
+/// # Errors
+///
+/// Returns an error if the TCP listener cannot bind or the server exits with an
+/// error.
 pub async fn run_server(router: Router, bind_addr: SocketAddr) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     info!(addr = %bind_addr, "RustWave API server listening");

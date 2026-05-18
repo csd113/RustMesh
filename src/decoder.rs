@@ -5,7 +5,6 @@ use crate::{
 use std::f64::consts::TAU;
 
 /// Precomputed sync-word bit pattern (`0x7E 0x7E`), avoiding heap allocation.
-#[allow(clippy::indexing_slicing)] // bounds are statically known: byte_idx < 2, bit_idx < 8
 const SYNC_BITS: [bool; 16] = {
     let bytes = [0x7E_u8, 0x7E];
     let mut bits = [false; 16];
@@ -22,9 +21,13 @@ const SYNC_BITS: [bool; 16] = {
 };
 
 /// Decode PCM samples back to the original filename and payload bytes.
+///
+/// # Errors
+///
+/// Returns an error when no valid frame with a matching sync word and CRC can
+/// be decoded from the provided samples.
 pub fn decode_progress(samples: &[f64], on_progress: impl Fn(f32)) -> Result<Decoded, String> {
     let spb = f64::from(SAMPLE_RATE) / f64::from(BAUD_RATE);
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let spb_int = spb.round() as usize;
 
     for offset in 0..spb_int {
@@ -39,6 +42,11 @@ pub fn decode_progress(samples: &[f64], on_progress: impl Fn(f32)) -> Result<Dec
 }
 
 /// Convenience wrapper with no progress reporting.
+///
+/// # Errors
+///
+/// Returns an error when no valid frame with a matching sync word and CRC can
+/// be decoded from the provided samples.
 pub fn decode(samples: &[f64]) -> Result<Decoded, String> {
     decode_progress(samples, |_| {})
 }
@@ -47,13 +55,6 @@ pub fn decode(samples: &[f64]) -> Result<Decoded, String> {
 // Step 1 — sample → bit stream via Goertzel
 // ---------------------------------------------------------------------------
 
-#[allow(
-    clippy::cast_precision_loss,      // usize → f64 for idx / total: acceptable at these scales
-    clippy::cast_possible_truncation, // f64.round() → usize: always positive integer
-    clippy::cast_sign_loss,           // f64.round() → usize: value is always ≥ 0
-    clippy::arithmetic_side_effects,  // float/int arithmetic cannot panic at these magnitudes
-    clippy::indexing_slicing,         // start..end is bounds-checked by the loop guard
-)]
 fn samples_to_bits(
     samples: &[f64],
     offset: usize,
@@ -87,13 +88,8 @@ fn samples_to_bits(
 
 // All slice indexing in this function is guarded by explicit bounds checks
 // immediately above each access, so indexing_slicing is a false positive here.
-// try_into() on a Vec produced by bits_to_bytes with an exact bit-width input
-// is guaranteed to succeed, so expect_used is also a false positive.
-#[allow(
-    clippy::arithmetic_side_effects, // integer index arithmetic; bounds checked manually
-    clippy::indexing_slicing,        // every slice is bounds-checked before access
-    clippy::expect_used,             // try_into() cannot fail: Vec length is exact
-)]
+// try_into() on a Vec produced by bits_to_bytes with an exact bit-width input is
+// guaranteed to succeed.
 fn find_frame_in_bits(bits: &[bool]) -> Result<Decoded, String> {
     let sync_len = SYNC_BITS.len(); // 16
 
@@ -126,12 +122,9 @@ fn find_frame_in_bits(bits: &[bool]) -> Result<Decoded, String> {
             continue;
         }
         let name_bytes = bits_to_bytes(&bits[cursor..cursor + name_bits]);
-        let filename = match String::from_utf8(name_bytes) {
-            Ok(name) => name,
-            Err(_) => {
-                search = sync_start + 1;
-                continue;
-            }
+        let Ok(filename) = String::from_utf8(name_bytes) else {
+            search = sync_start + 1;
+            continue;
         };
         cursor += name_bits;
 
@@ -147,26 +140,17 @@ fn find_frame_in_bits(bits: &[bool]) -> Result<Decoded, String> {
 
         // ── payload ───────────────────────────────────────────────────
         let payload_start = cursor;
-        let payload_bits = match payload_len.checked_mul(8) {
-            Some(bits) => bits,
-            None => {
-                search = sync_start + 1;
-                continue;
-            }
+        let Some(payload_bits) = payload_len.checked_mul(8) else {
+            search = sync_start + 1;
+            continue;
         };
-        let payload_end = match payload_start.checked_add(payload_bits) {
-            Some(end) => end,
-            None => {
-                search = sync_start + 1;
-                continue;
-            }
+        let Some(payload_end) = payload_start.checked_add(payload_bits) else {
+            search = sync_start + 1;
+            continue;
         };
-        let crc_end = match payload_end.checked_add(16) {
-            Some(end) => end,
-            None => {
-                search = sync_start + 1;
-                continue;
-            }
+        let Some(crc_end) = payload_end.checked_add(16) else {
+            search = sync_start + 1;
+            continue;
         };
         if crc_end > bits.len() {
             search = sync_start + 1;
@@ -198,7 +182,6 @@ fn find_frame_in_bits(bits: &[bool]) -> Result<Decoded, String> {
 // Non-integer Goertzel DFT
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::arithmetic_side_effects)] // float arithmetic cannot panic
 fn goertzel(samples: &[f64], freq: f64, sample_rate: u32) -> f64 {
     let w = TAU * freq / f64::from(sample_rate);
     let cos_w = w.cos();
@@ -219,7 +202,6 @@ fn goertzel(samples: &[f64], freq: f64, sample_rate: u32) -> f64 {
 // Bit / byte helpers
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::arithmetic_side_effects)] // i is always 0..=7 from enumerate() on chunks(8)
 pub fn bits_to_bytes(bits: &[bool]) -> Vec<u8> {
     bits.chunks(8)
         .map(|chunk| {
@@ -241,12 +223,6 @@ mod tests {
     use crate::{encoder, framer};
 
     #[test]
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::cast_precision_loss,
-        clippy::arithmetic_side_effects
-    )]
     fn goertzel_discriminates_mark_vs_space() {
         let spb = (f64::from(SAMPLE_RATE) / f64::from(BAUD_RATE)).round() as usize;
         let mark_samples: Vec<f64> = (0..spb)
@@ -269,7 +245,8 @@ mod tests {
     #[test]
     fn full_round_trip_text() -> Result<(), String> {
         let payload = b"Hello, AFSK!";
-        let samples = encoder::encode(&framer::frame(payload, "hello.txt").unwrap());
+        let framed = framer::frame(payload, "hello.txt")?;
+        let samples = encoder::encode(&framed);
         let decoded = decode(&samples)?;
         assert_eq!(decoded.data, payload);
         assert_eq!(decoded.filename, "hello.txt");
@@ -279,7 +256,8 @@ mod tests {
     #[test]
     fn full_round_trip_all_bytes() -> Result<(), String> {
         let payload: Vec<u8> = (0u8..=255).collect();
-        let samples = encoder::encode(&framer::frame(&payload, "all.bin").unwrap());
+        let framed = framer::frame(&payload, "all.bin")?;
+        let samples = encoder::encode(&framed);
         let decoded = decode(&samples)?;
         assert_eq!(decoded.data, payload);
         assert_eq!(decoded.filename, "all.bin");
@@ -288,7 +266,8 @@ mod tests {
 
     #[test]
     fn full_round_trip_empty() -> Result<(), String> {
-        let samples = encoder::encode(&framer::frame(&[], "empty.bin").unwrap());
+        let framed = framer::frame(&[], "empty.bin")?;
+        let samples = encoder::encode(&framed);
         let decoded = decode(&samples)?;
         assert!(decoded.data.is_empty());
         Ok(())
@@ -297,7 +276,8 @@ mod tests {
     #[test]
     fn filename_with_dots_preserved() -> Result<(), String> {
         let payload = b"compressed archive";
-        let samples = encoder::encode(&framer::frame(payload, "archive.tar.gz").unwrap());
+        let framed = framer::frame(payload, "archive.tar.gz")?;
+        let samples = encoder::encode(&framed);
         let decoded = decode(&samples)?;
         assert_eq!(decoded.filename, "archive.tar.gz");
         Ok(())

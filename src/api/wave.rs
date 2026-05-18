@@ -4,7 +4,7 @@
 use axum::{
     extract::Multipart,
     http::header,
-    response::{IntoResponse, Response},
+    response::{IntoResponse as _, Response},
     Json,
 };
 use tracing::{info, warn};
@@ -27,6 +27,12 @@ pub async fn wave_status() -> Json<WaveStatusResponse> {
 
 // ── POST /wave/encode ──────────────────────────────────────────────────────
 
+/// Encode an uploaded file into an AFSK WAV response.
+///
+/// # Errors
+///
+/// Returns an error if the multipart upload is invalid, framing or encoding
+/// fails, or the blocking task fails.
 pub async fn wave_encode(mut multipart: Multipart) -> Result<Response, ApiError> {
     let (filename, file_bytes) = extract_file_field(&mut multipart).await?;
 
@@ -67,6 +73,12 @@ pub async fn wave_encode(mut multipart: Multipart) -> Result<Response, ApiError>
 
 // ── POST /wave/decode ──────────────────────────────────────────────────────
 
+/// Decode an uploaded AFSK WAV and return the restored payload.
+///
+/// # Errors
+///
+/// Returns an error if the multipart upload is invalid, WAV decoding fails, or
+/// the blocking task fails.
 pub async fn wave_decode(mut multipart: Multipart) -> Result<Response, ApiError> {
     let (_field_name, wav_bytes) = extract_file_field(&mut multipart).await?;
 
@@ -113,7 +125,7 @@ async fn extract_file_field(multipart: &mut Multipart) -> Result<(String, Vec<u8
         ));
     };
 
-    let filename = field.file_name().unwrap_or("upload").to_string();
+    let filename = field.file_name().unwrap_or("upload").to_owned();
     let data = field
         .bytes()
         .await

@@ -1,5 +1,10 @@
-use clap::{CommandFactory, Parser, Subcommand};
-use std::{net::SocketAddr, path::PathBuf};
+use clap::{CommandFactory as _, Parser, Subcommand};
+use std::{
+    fmt::Arguments,
+    io::{self, Write as _},
+    net::SocketAddr,
+    path::PathBuf,
+};
 
 #[derive(Parser)]
 #[command(name = "rustwave-cli", version, about = "RustWave audio codec", long_about = None)]
@@ -39,7 +44,7 @@ enum Command {
 fn main() {
     let _log_guard = rustwave::logging::init();
     if let Err(e) = run() {
-        eprintln!("error: {e}");
+        if let Err(_write_err) = write_stderr_line(format_args!("error: {e}")) {}
         std::process::exit(1);
     }
 }
@@ -55,9 +60,8 @@ fn run() -> Result<(), String> {
             Some(Command::Serve { bind }) => {
                 let addr = bind
                     .or_else(|| {
-                        std::env::var("RUSTWAVE_BIND")
-                            .ok()
-                            .and_then(|s| s.parse().ok())
+                        let bind = std::env::var("RUSTWAVE_BIND").ok()?;
+                        bind.parse().ok()
                     })
                     .unwrap_or_else(|| std::net::SocketAddr::from(([127, 0, 0, 1], 7071)));
 
@@ -78,19 +82,18 @@ fn run() -> Result<(), String> {
                 let data_len = std::fs::metadata(&input)
                     .map_err(|e| format!("cannot read '{}': {e}", input.display()))?
                     .len() as usize;
-                #[allow(clippy::cast_precision_loss)]
                 let duration = data_len as f64 / f64::from(rustwave::config::SAMPLE_RATE);
                 let filename = input
                     .file_name()
                     .and_then(|name| name.to_str())
                     .unwrap_or("<unknown>");
-                eprintln!(
+                write_stderr_line(format_args!(
                     "encoded '{}' ({} byte{}) -> {} ({duration:.2} s)",
                     filename,
                     data_len,
                     plural(data_len),
                     output.display()
-                );
+                ))?;
             }
 
             Some(Command::Decode { input, output }) => {
@@ -106,18 +109,18 @@ fn run() -> Result<(), String> {
                 });
                 std::fs::write(&out_path, &decoded.data)
                     .map_err(|e| format!("cannot write '{}': {e}", out_path.display()))?;
-                eprintln!(
+                write_stderr_line(format_args!(
                     "decoded {} byte{} -> '{}' (original filename: '{}')",
                     decoded.data.len(),
                     plural(decoded.data.len()),
                     out_path.display(),
                     decoded.filename
-                );
+                ))?;
             }
 
             None => {
                 Cli::command().print_help().map_err(|e| e.to_string())?;
-                eprintln!();
+                write_stderr_line(format_args!(""))?;
             }
         }
     }
@@ -131,4 +134,9 @@ const fn plural(n: usize) -> &'static str {
     } else {
         "s"
     }
+}
+
+fn write_stderr_line(args: Arguments<'_>) -> Result<(), String> {
+    let mut stderr = io::stderr().lock();
+    writeln!(stderr, "{args}").map_err(|e| e.to_string())
 }

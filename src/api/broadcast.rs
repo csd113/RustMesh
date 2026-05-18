@@ -4,7 +4,7 @@
 use axum::{
     extract::{Multipart, State},
     http::{header, StatusCode},
-    response::{IntoResponse, Response},
+    response::{IntoResponse as _, Response},
     Json,
 };
 use bytes::Bytes;
@@ -57,6 +57,12 @@ async fn check_broadcaster_reachable(url: &str) -> bool {
 
 // ── POST /broadcast/transmit ───────────────────────────────────────────────
 
+/// Accept a file, encode it as a WAV payload, and forward it to the broadcaster.
+///
+/// # Errors
+///
+/// Returns an error if the multipart upload is invalid, encoding fails, the
+/// blocking task fails, or the broadcaster rejects the generated WAV.
 pub async fn broadcast_transmit(
     State(state): State<AppState>,
     mut multipart: Multipart,
@@ -92,6 +98,12 @@ pub async fn broadcast_transmit(
     }))
 }
 
+/// Forward an encoded WAV payload to the configured broadcaster endpoint.
+///
+/// # Errors
+///
+/// Returns an error if the multipart request cannot be built, the broadcaster
+/// cannot be reached, or it returns a non-success HTTP status.
 pub async fn forward_to_broadcaster(
     broadcaster_url: &str,
     original_filename: &str,
@@ -135,6 +147,12 @@ pub async fn forward_to_broadcaster(
 
 // ── POST /broadcast/receive ────────────────────────────────────────────────
 
+/// Decode an uploaded WAV and queue the restored payload for `ChanNet`.
+///
+/// # Errors
+///
+/// Returns an error if the multipart upload is invalid, WAV decoding fails, the
+/// blocking task fails, or the incoming queue is full.
 pub async fn broadcast_receive(
     State(state): State<AppState>,
     mut multipart: Multipart,
@@ -221,7 +239,7 @@ async fn extract_file_field(multipart: &mut Multipart) -> Result<(String, Vec<u8
         ));
     };
 
-    let filename = field.file_name().unwrap_or("upload").to_string();
+    let filename = field.file_name().unwrap_or("upload").to_owned();
     let data = field
         .bytes()
         .await

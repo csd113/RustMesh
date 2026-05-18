@@ -17,7 +17,6 @@ pub type IncomingQueue = Arc<Mutex<VecDeque<QueuedFile>>>;
 pub struct AppState {
     pub broadcaster_url: String,
     pub channet_url: String,
-    #[allow(dead_code)]
     pub wave_routes_enabled: bool,
     pub max_queue_depth: usize,
     pub incoming_queue: IncomingQueue,
@@ -26,10 +25,10 @@ pub struct AppState {
 impl AppState {
     pub fn new(wave_routes_enabled: bool) -> Self {
         let broadcaster_url = std::env::var("RUSTWAVE_BROADCASTER_URL")
-            .unwrap_or_else(|_| "http://localhost:9090".to_string());
+            .unwrap_or_else(|_| "http://localhost:9090".to_owned());
 
         let channet_url = std::env::var("RUSTWAVE_CHANNET_URL")
-            .unwrap_or_else(|_| "http://localhost:7070".to_string());
+            .unwrap_or_else(|_| "http://localhost:7070".to_owned());
         let max_queue_depth = std::env::var("RUSTWAVE_QUEUE_DEPTH")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -52,6 +51,12 @@ impl AppState {
         self.incoming_queue.lock().await.push_back(file);
     }
 
+    /// Queue a decoded file if there is capacity.
+    ///
+    /// # Errors
+    ///
+    /// Returns the original file when the queue is already at
+    /// `max_queue_depth`.
     pub async fn try_enqueue(&self, file: QueuedFile) -> Result<(), QueuedFile> {
         let mut queue = self.incoming_queue.lock().await;
         if queue.len() >= self.max_queue_depth {

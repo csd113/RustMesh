@@ -4,6 +4,11 @@ use std::path::Path;
 use crate::config::SAMPLE_RATE;
 
 /// Write normalised f64 samples (range −1.0 … 1.0) to a 16-bit mono PCM WAV.
+///
+/// # Errors
+///
+/// Returns an error if the output file cannot be created, a sample cannot be
+/// written, or the WAV writer cannot be finalized.
 pub fn write(path: &Path, samples: &[f64]) -> Result<(), String> {
     let spec = WavSpec {
         channels: 1,
@@ -16,7 +21,6 @@ pub fn write(path: &Path, samples: &[f64]) -> Result<(), String> {
 
     for &s in samples {
         // clamp guarantees the value is in [-32767, 32767] before truncation
-        #[allow(clippy::cast_possible_truncation)]
         let v = (s.clamp(-1.0, 1.0) * 32_767.0) as i16;
         writer.write_sample(v).map_err(|e| e.to_string())?;
     }
@@ -27,6 +31,11 @@ pub fn write(path: &Path, samples: &[f64]) -> Result<(), String> {
 /// Read a 16-bit mono PCM WAV and return normalised f64 samples (range −1 … 1).
 ///
 /// Stereo files are accepted; only the first (left) channel is used.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, is not supported 16-bit
+/// integer PCM, has zero channels, or contains invalid samples.
 pub fn read(path: &Path) -> Result<Vec<f64>, String> {
     let mut reader = WavReader::open(path).map_err(|e| e.to_string())?;
     let spec = reader.spec();
@@ -55,6 +64,12 @@ pub fn read(path: &Path) -> Result<Vec<f64>, String> {
 
 // ── In-memory variants used by the HTTP API ──────────────────────────────
 
+/// Write normalised f64 samples to an in-memory 16-bit mono PCM WAV.
+///
+/// # Errors
+///
+/// Returns an error if a sample cannot be written or the WAV writer cannot be
+/// finalized.
 pub fn write_to_bytes(samples: &[f64]) -> Result<Vec<u8>, String> {
     use std::io::Cursor;
     let spec = hound::WavSpec {
@@ -69,7 +84,6 @@ pub fn write_to_bytes(samples: &[f64]) -> Result<Vec<u8>, String> {
     let mut writer = hound::WavWriter::new(cursor, spec).map_err(|e| e.to_string())?;
 
     for &s in samples {
-        #[allow(clippy::cast_possible_truncation)]
         let v = (s.clamp(-1.0, 1.0) * 32_767.0) as i16;
         writer.write_sample(v).map_err(|e| e.to_string())?;
     }
@@ -78,6 +92,12 @@ pub fn write_to_bytes(samples: &[f64]) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
+/// Read a 16-bit mono PCM WAV from memory and return normalised f64 samples.
+///
+/// # Errors
+///
+/// Returns an error if the data is not a readable WAV, is not supported 16-bit
+/// integer PCM, has zero channels, or contains invalid samples.
 pub fn read_from_bytes(data: &[u8]) -> Result<Vec<f64>, String> {
     use std::io::Cursor;
     let cursor = Cursor::new(data);
@@ -149,7 +169,6 @@ mod tests {
     #[test]
     fn sine_round_trip() -> Result<(), String> {
         let tmp = TempFile::new("rustwave_wav_sine.wav");
-        #[allow(clippy::cast_precision_loss)]
         let original: Vec<f64> = (0..44_100_i32)
             .map(|i| 0.5 * (TAU * 440.0 * f64::from(i) / 44_100.0).sin())
             .collect();
@@ -168,7 +187,6 @@ mod tests {
     #[test]
     fn memory_round_trip() -> Result<(), String> {
         use std::f64::consts::TAU;
-        #[allow(clippy::cast_precision_loss)]
         let original: Vec<f64> = (0..4_410_i32)
             .map(|i| 0.5 * (TAU * 440.0 * f64::from(i) / 44_100.0).sin())
             .collect();

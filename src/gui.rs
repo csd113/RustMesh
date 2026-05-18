@@ -71,7 +71,6 @@ impl AfskGui {
                 let prog = Arc::clone(&progress);
                 let ctx2 = ctx.clone();
                 let on_progress = move |v: f32| {
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                     prog.store((v.clamp(0.0, 1.0) * 1_000_000.0) as u32, Ordering::Relaxed);
                     ctx2.request_repaint_after(Duration::from_millis(16));
                 };
@@ -155,7 +154,7 @@ impl AfskGui {
             };
 
             ui.painter().rect_filled(rect, CornerRadius::same(10), fill);
-            dashed_border(ui.painter(), rect, Stroke::new(1.5, border));
+            dashed_border(ui.painter(), rect, Stroke::new(1.5_f32, border));
 
             match &self.state {
                 State::Idle => draw_idle(ui.painter(), rect, hovering, accent, dim_text),
@@ -165,7 +164,6 @@ impl AfskGui {
                     progress,
                     ..
                 } => {
-                    #[allow(clippy::cast_precision_loss)]
                     // u32 progress value; precision loss is fine
                     let v = progress.load(Ordering::Relaxed) as f32 / 1_000_000.0;
                     draw_processing(ui.painter(), rect, action, filename, v, accent, dim_text);
@@ -204,8 +202,10 @@ impl eframe::App for AfskGui {
         self.poll_worker();
 
         // Extract only the path to avoid cloning the entire Vec<DroppedFile> every frame.
-        let dropped_path: Option<PathBuf> =
-            ctx.input(|i| i.raw.dropped_files.first().and_then(|f| f.path.clone()));
+        let dropped_path: Option<PathBuf> = ctx.input(|i| {
+            let file = i.raw.dropped_files.first()?;
+            file.path.clone()
+        });
         if let Some(p) = dropped_path {
             if !matches!(self.state, State::Processing { .. }) {
                 self.start_processing(p, ctx.clone());
@@ -228,7 +228,6 @@ impl eframe::App for AfskGui {
                 let avail = ui.available_size();
                 ui.add_space(18.0);
                 ui.vertical_centered(|ui| {
-                    #[allow(clippy::arithmetic_side_effects)]
                     // egui Vec2 addition; no panic risk
                     ui.painter().text(
                         ui.next_widget_position() + Vec2::new(avail.x / 2.0, 0.0),
@@ -263,7 +262,6 @@ fn draw_idle(painter: &egui::Painter, zone: Rect, hovering: bool, accent: Color3
         Color32::from_rgb(210, 215, 230)
     };
 
-    #[allow(clippy::arithmetic_side_effects)]
     {
         painter.text(
             Pos2::new(cx, cy - 28.0),
@@ -296,7 +294,6 @@ fn draw_idle(painter: &egui::Painter, zone: Rect, hovering: bool, accent: Color3
     }
 }
 
-#[allow(clippy::arithmetic_side_effects)]
 fn draw_processing(
     painter: &egui::Painter,
     zone: Rect,
@@ -347,7 +344,6 @@ fn draw_processing(
     );
 }
 
-#[allow(clippy::arithmetic_side_effects)]
 fn draw_result(
     painter: &egui::Painter,
     zone: Rect,
@@ -402,12 +398,6 @@ fn draw_result(
     );
 }
 
-#[allow(
-    clippy::arithmetic_side_effects,  // float/Vec2 arithmetic in egui types; no panic risk
-    clippy::cast_possible_truncation, // f32.ceil() → usize: always positive
-    clippy::cast_sign_loss,           // f32.ceil() → usize: always positive
-    clippy::cast_precision_loss,      // usize i → f32: acceptable for pixel coordinates
-)]
 fn dashed_border(painter: &egui::Painter, rect: Rect, stroke: Stroke) {
     let dash = 8.0_f32;
     let gap = 5.0_f32;
@@ -450,6 +440,11 @@ fn dashed_border(painter: &egui::Painter, rect: Rect, stroke: Stroke) {
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
+/// Launch the GUI and its background broadcast API server.
+///
+/// # Errors
+///
+/// Returns an error if the native GUI runtime cannot be started.
 pub fn run() -> eframe::Result<()> {
     // Spawn the /broadcast/* API server on a background OS thread.
     std::thread::spawn(|| {

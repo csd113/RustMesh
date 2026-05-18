@@ -14,6 +14,12 @@ pub use encoder::{encode, encode_progress};
 pub use framer::{deframe, frame, Decoded};
 pub use wav::{read, read_from_bytes, write, write_to_bytes};
 
+/// Encode an input file into an AFSK WAV file at `output`.
+///
+/// # Errors
+///
+/// Returns an error if the input cannot be read, the input filename cannot be
+/// represented in the frame, or the output WAV cannot be written.
 pub fn encode_file(input: impl AsRef<Path>, output: impl AsRef<Path>) -> Result<(), String> {
     let input = input.as_ref();
     let output = output.as_ref();
@@ -29,6 +35,12 @@ pub fn encode_file(input: impl AsRef<Path>, output: impl AsRef<Path>) -> Result<
     write(output, &samples).map_err(|e| format!("cannot write '{}': {e}", output.display()))
 }
 
+/// Decode an AFSK WAV file and write the restored payload.
+///
+/// # Errors
+///
+/// Returns an error if the input WAV cannot be read, decoding fails, or the
+/// restored output cannot be written.
 pub fn decode_file(input: impl AsRef<Path>, output: Option<PathBuf>) -> Result<PathBuf, String> {
     let input = input.as_ref();
 

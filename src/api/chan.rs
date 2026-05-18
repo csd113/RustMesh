@@ -37,6 +37,11 @@ pub async fn check_channet_reachable(channet_url: &str) -> bool {
 
 /// POST a typed `ChanCommand` to `ChanNet`'s /chan/command endpoint.
 /// Returns the raw ZIP bytes from the response body.
+///
+/// # Errors
+///
+/// Returns an error if `ChanNet` cannot be reached, returns a non-success HTTP
+/// status, or its response body cannot be read.
 pub async fn send_chan_command(
     channet_url: &str,
     command: &ChanCommand,
@@ -64,6 +69,13 @@ pub async fn send_chan_command(
 
 // ── POST /chan/request ─────────────────────────────────────────────────────
 
+/// Forward a typed `ChanCommand` to `ChanNet`, encode the ZIP response, and
+/// transmit it through the configured broadcaster.
+///
+/// # Errors
+///
+/// Returns an error if `ChanNet` fails, WAV encoding fails, the blocking task
+/// fails, or the broadcaster rejects the generated WAV.
 pub async fn chan_request(
     State(state): State<AppState>,
     Json(command): Json<ChanCommand>,

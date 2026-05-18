@@ -11,7 +11,9 @@
 
 use std::path::PathBuf;
 use tracing_appender::rolling;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use tracing_subscriber::{
+    fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter, Layer as _,
+};
 
 /// Initialise logging. Must be called once before any tracing macros are used.
 ///

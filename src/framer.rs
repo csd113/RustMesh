@@ -20,22 +20,22 @@ pub struct Decoded {
 /// # Panics
 ///
 /// Panics if `data.len()` exceeds `u32::MAX` (≈ 4 GiB).
-#[allow(
-    clippy::arithmetic_side_effects,  // capacity arithmetic is safe; values are small by construction
-    clippy::cast_possible_truncation, // name_len ≤ u16::MAX, data.len ≤ u32::MAX — guarded above each cast
-    clippy::indexing_slicing,         // out[PREAMBLE_LEN..] is valid: preamble bytes are always pushed first
-)]
+///
+/// # Errors
+///
+/// Returns an error if `filename` has no final path component, is not valid
+/// UTF-8, or exceeds the frame's `u16` filename-length field.
 pub fn frame(data: &[u8], filename: &str) -> Result<Vec<u8>, String> {
     let filename = Path::new(filename)
         .file_name()
-        .ok_or_else(|| "filename must contain a final path component".to_string())?;
+        .ok_or_else(|| "filename must contain a final path component".to_owned())?;
     let filename = filename
         .to_str()
-        .ok_or_else(|| "filename must be valid UTF-8".to_string())?;
+        .ok_or_else(|| "filename must be valid UTF-8".to_owned())?;
 
     let name_bytes = filename.as_bytes();
     let name_len = u16::try_from(name_bytes.len())
-        .map_err(|_| "filename exceeds maximum frame size (u16::MAX bytes)".to_string())?;
+        .map_err(|_err| "filename exceeds maximum frame size (u16::MAX bytes)".to_owned())?;
 
     assert!(
         u32::try_from(data.len()).is_ok(),
@@ -70,17 +70,16 @@ pub fn frame(data: &[u8], filename: &str) -> Result<Vec<u8>, String> {
 ///
 /// Used only by the byte-level path (tests / CLI verification).
 /// The audio decoder uses `find_frame_in_bits` in decoder.rs directly.
-#[allow(
-    dead_code,
-    clippy::arithmetic_side_effects,  // cursor arithmetic is bounds-checked before each use
-    clippy::cast_possible_truncation, // u32 as usize: payload_len is bounds-checked before use
-    clippy::indexing_slicing,         // all slices are bounds-checked immediately above each access
-)]
+///
+/// # Errors
+///
+/// Returns an error if no sync word is found, required fields are truncated,
+/// the filename is not UTF-8, or the stored CRC does not match the frame body.
 pub fn deframe(raw: &[u8]) -> Result<Decoded, String> {
     let sync_pos = raw
         .windows(SYNC.len())
         .position(|w| w == SYNC)
-        .ok_or_else(|| "sync word not found".to_string())?;
+        .ok_or_else(|| "sync word not found".to_owned())?;
 
     let mut cursor = sync_pos + SYNC.len();
 
@@ -91,7 +90,7 @@ pub fn deframe(raw: &[u8]) -> Result<Decoded, String> {
     let name_len = u16::from_le_bytes(
         raw[cursor..cursor + 2]
             .try_into()
-            .map_err(|_| "internal: name_len slice error".to_string())?,
+            .map_err(|_err| "internal: name_len slice error".to_owned())?,
     ) as usize;
     cursor += 2;
 
@@ -100,7 +99,7 @@ pub fn deframe(raw: &[u8]) -> Result<Decoded, String> {
         return Err("frame too short: missing filename".into());
     }
     let filename = String::from_utf8(raw[cursor..cursor + name_len].to_vec())
-        .map_err(|_| "filename is not valid UTF-8".to_string())?;
+        .map_err(|_err| "filename is not valid UTF-8".to_owned())?;
     cursor += name_len;
 
     // payload_len (u32)
@@ -110,7 +109,7 @@ pub fn deframe(raw: &[u8]) -> Result<Decoded, String> {
     let payload_len = u32::from_le_bytes(
         raw[cursor..cursor + 4]
             .try_into()
-            .map_err(|_| "internal: payload_len slice error".to_string())?,
+            .map_err(|_err| "internal: payload_len slice error".to_owned())?,
     ) as usize;
     cursor += 4;
 
@@ -128,7 +127,7 @@ pub fn deframe(raw: &[u8]) -> Result<Decoded, String> {
     let stored_crc = u16::from_le_bytes(
         raw[payload_end..crc_end]
             .try_into()
-            .map_err(|_| "internal: CRC slice error".to_string())?,
+            .map_err(|_err| "internal: CRC slice error".to_owned())?,
     );
     let computed_crc = crc16(&raw[sync_pos..payload_end]);
 
@@ -149,11 +148,6 @@ pub fn deframe(raw: &[u8]) -> Result<Decoded, String> {
 // ---------------------------------------------------------------------------
 
 /// Pre-computed CRC-16/CCITT lookup table (polynomial 0x1021).
-#[allow(
-    clippy::arithmetic_side_effects,
-    clippy::cast_possible_truncation,
-    clippy::indexing_slicing
-)]
 const CRC16_TABLE: [u16; 256] = {
     let mut table = [0u16; 256];
     let mut i = 0usize;
@@ -175,11 +169,6 @@ const CRC16_TABLE: [u16; 256] = {
 };
 
 /// CRC-16/CCITT via table lookup (polynomial 0x1021, init 0xFFFF, no reflection).
-#[allow(
-    clippy::arithmetic_side_effects,
-    clippy::cast_possible_truncation,
-    clippy::indexing_slicing
-)]
 pub fn crc16(data: &[u8]) -> u16 {
     let mut crc: u16 = 0xFFFF;
     for &byte in data {
@@ -198,68 +187,68 @@ pub fn crc16(data: &[u8]) -> u16 {
 mod tests {
     use super::*;
 
-    fn rt(data: &[u8], name: &str) -> Decoded {
-        #[allow(clippy::unwrap_used)]
-        deframe(&frame(data, name).unwrap()).unwrap()
+    fn rt(data: &[u8], name: &str) -> Result<Decoded, String> {
+        deframe(&frame(data, name)?)
     }
 
     #[test]
-    fn round_trip_empty_payload() {
-        let d = rt(&[], "empty.bin");
+    fn round_trip_empty_payload() -> Result<(), String> {
+        let d = rt(&[], "empty.bin")?;
         assert!(d.data.is_empty());
         assert_eq!(d.filename, "empty.bin");
+        Ok(())
     }
 
     #[test]
-    fn round_trip_ascii() {
-        let d = rt(b"Hello, AFSK!", "hello.txt");
+    fn round_trip_ascii() -> Result<(), String> {
+        let d = rt(b"Hello, AFSK!", "hello.txt")?;
         assert_eq!(d.data, b"Hello, AFSK!");
         assert_eq!(d.filename, "hello.txt");
+        Ok(())
     }
 
     #[test]
-    fn round_trip_binary() {
+    fn round_trip_binary() -> Result<(), String> {
         let data: Vec<u8> = (0u8..=255).collect();
-        let d = rt(&data, "all_bytes.bin");
+        let d = rt(&data, "all_bytes.bin")?;
         assert_eq!(d.data, data);
+        Ok(())
     }
 
     #[test]
-    fn filename_preserved() {
-        let d = rt(b"data", "archive.tar.gz");
+    fn filename_preserved() -> Result<(), String> {
+        let d = rt(b"data", "archive.tar.gz")?;
         assert_eq!(d.filename, "archive.tar.gz");
+        Ok(())
     }
 
     #[test]
-    fn long_filename_is_preserved() {
+    fn long_filename_is_preserved() -> Result<(), String> {
         let filename = format!("{}.txt", "a".repeat(260));
-        let d = rt(b"data", &filename);
+        let d = rt(b"data", &filename)?;
         assert_eq!(d.filename, filename);
+        Ok(())
     }
 
     #[test]
-    fn deframe_ignores_leading_garbage() {
-        let mut framed = frame(b"test", "test.txt").unwrap();
+    fn deframe_ignores_leading_garbage() -> Result<(), String> {
+        let mut framed = frame(b"test", "test.txt")?;
         framed.insert(0, 0xFF);
         framed.insert(0, 0x42);
-        #[allow(clippy::unwrap_used)]
-        let d = deframe(&framed).unwrap();
+        let d = deframe(&framed)?;
         assert_eq!(d.data, b"test");
         assert_eq!(d.filename, "test.txt");
+        Ok(())
     }
 
     #[test]
-    #[allow(
-        clippy::unwrap_used,
-        clippy::indexing_slicing,
-        clippy::arithmetic_side_effects
-    )]
-    fn crc_detects_corruption() {
-        let mut framed = frame(b"integrity check", "check.txt").unwrap();
+    fn crc_detects_corruption() -> Result<(), String> {
+        let mut framed = frame(b"integrity check", "check.txt")?;
         // Corrupt a payload byte (past preamble+sync+namelen+name+payloadlen)
         let corrupt_pos = PREAMBLE_LEN + 2 + 2 + "check.txt".len() + 4 + 2;
         framed[corrupt_pos] ^= 0xFF;
         assert!(deframe(&framed).is_err());
+        Ok(())
     }
 
     #[test]

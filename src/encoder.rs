@@ -3,12 +3,6 @@ use std::f64::consts::TAU;
 
 /// Encode `framed` bytes into PCM audio samples.
 /// Calls `on_progress` with a value in 0.0..=1.0 as bits are processed.
-#[allow(
-    clippy::cast_precision_loss,      // usize → f64 for idx / total_bits
-    clippy::cast_possible_truncation, // f64 → usize for silence_len / start / end
-    clippy::cast_sign_loss,           // f64.round() → usize (always positive)
-    clippy::arithmetic_side_effects,  // float/int arithmetic; no panic risk
-)]
 pub fn encode_progress(framed: &[u8], on_progress: impl Fn(f32)) -> Vec<f64> {
     let spb = f64::from(SAMPLE_RATE) / f64::from(BAUD_RATE);
     let mark_inc = TAU * MARK_FREQ / f64::from(SAMPLE_RATE);
